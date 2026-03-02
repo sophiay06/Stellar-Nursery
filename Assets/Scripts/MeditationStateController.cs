@@ -16,49 +16,66 @@ public class MeditationStateController : MonoBehaviour
     [Tooltip("Set true when we enter Release once. Visual controllers should consume this so Release runs only once.")]
     public bool releaseLatched = false;
 
-    [Header("Input")]
-    public NebulaCompression nebulaCompression;
+    // ============================================================
+    // Breathing Stability Input
+    // ============================================================
 
-    [Header("Calm band on compression")]
-    [Range(0f, 1f)] public float calmMin = 0.30f;
-    [Range(0f, 1f)] public float calmMax = 0.70f;
+    [Header("Breathing Stability")]
+    public BreathingStability breathingStability;
+
+    [Range(0f, 1f)]
+    [Tooltip("Required breathing stability to count as calm.")]
+    public float requiredStability01 = 0.75f;
+
+    // ============================================================
+    // Timing
+    // ============================================================
 
     [Header("Hold times (seconds)")]
-    public float holdToEnterBalance = 12f;// 10–20s
-    public float holdToEnterRelease = 25f;  // 20–40s
+    public float holdToEnterBalance = 12f;
+    public float holdToEnterRelease = 25f;
 
     [Header("Hysteresis (prevents flicker)")]
     public float exitGraceSeconds = 2f;
 
+    // ============================================================
+    // Huge Stars
+    // ============================================================
+
     [Header("Huge Stars")]
     public HugeStarsController hugeStars;
-    [Tooltip("Show huge stars this many seconds BEFORE Balance would transition into Release.")]
+
+    [Tooltip("Show huge stars this many seconds BEFORE Release.")]
     public float hugeStarsLeadTime = 5f;
 
     [Header("Huge Stars State")]
-    [Tooltip("True after huge stars have been shown for this cycle. Used to freeze starfield mapping.")]
     public bool hugeStarsActive = false;
 
     private bool hugeStarsShownThisCycle = false;
 
+    // ============================================================
+    // Internal Timers
+    // ============================================================
+
     private float calmHoldTimer = 0f;
-    private float outOfBandTimer = 0f;
+    private float outOfStabilityTimer = 0f;
 
     void Update()
     {
-        if (nebulaCompression == null) return;
+        if (breathingStability == null)
+            return;
 
-        float c = nebulaCompression.compression;
-        bool inCalmBand = (c >= calmMin && c <= calmMax);
+        bool isStable =
+            breathingStability.stability01 >= requiredStability01;
 
         switch (currentPhase)
         {
             case MeditationPhase.Arrival:
-                UpdateArrival(inCalmBand);
+                UpdateArrival(isStable);
                 break;
 
             case MeditationPhase.Balance:
-                UpdateBalance(inCalmBand);
+                UpdateBalance(isStable);
                 break;
 
             case MeditationPhase.Release:
@@ -66,9 +83,13 @@ public class MeditationStateController : MonoBehaviour
         }
     }
 
-    void UpdateArrival(bool inCalmBand)
+    // ============================================================
+    // Arrival Phase
+    // ============================================================
+
+    void UpdateArrival(bool isStable)
     {
-        if (inCalmBand)
+        if (isStable)
         {
             calmHoldTimer += Time.deltaTime;
 
@@ -81,21 +102,27 @@ public class MeditationStateController : MonoBehaviour
         }
     }
 
-    void UpdateBalance(bool inCalmBand)
+    // ============================================================
+    // Balance Phase
+    // ============================================================
+
+    void UpdateBalance(bool isStable)
     {
-        if (inCalmBand)
+        if (isStable)
         {
-            outOfBandTimer = 0f;
+            outOfStabilityTimer = 0f;
             calmHoldTimer += Time.deltaTime;
 
-            //huge stars trigger
             float timeUntilRelease = holdToEnterRelease - calmHoldTimer;
-            if (!hugeStarsShownThisCycle && timeUntilRelease <= hugeStarsLeadTime)
+
+            if (!hugeStarsShownThisCycle &&
+                timeUntilRelease <= hugeStarsLeadTime)
             {
                 hugeStarsShownThisCycle = true;
                 hugeStarsActive = true;
 
-                if (hugeStars != null) hugeStars.Show();
+                if (hugeStars != null)
+                    hugeStars.Show();
             }
 
             if (calmHoldTimer >= holdToEnterRelease)
@@ -103,42 +130,49 @@ public class MeditationStateController : MonoBehaviour
         }
         else
         {
-            outOfBandTimer += Time.deltaTime;
+            outOfStabilityTimer += Time.deltaTime;
 
-            if (outOfBandTimer >= exitGraceSeconds)
+            if (outOfStabilityTimer >= exitGraceSeconds)
             {
                 EnterArrival();
             }
             else
             {
-                calmHoldTimer = Mathf.Max(0f, calmHoldTimer - Time.deltaTime * 0.5f);
+                calmHoldTimer =
+                    Mathf.Max(0f, calmHoldTimer - Time.deltaTime * 0.5f);
             }
         }
     }
 
+    // ============================================================
+    // Phase Transitions
+    // ============================================================
+
     void EnterArrival()
     {
         currentPhase = MeditationPhase.Arrival;
+
         calmHoldTimer = 0f;
-        outOfBandTimer = 0f;
+        outOfStabilityTimer = 0f;
 
         releaseLatched = false;
 
         hugeStarsShownThisCycle = false;
-        hugeStarsActive = false; // reset
+        hugeStarsActive = false;
 
-        Debug.Log("Meditation → ARRIVAL (compression proxy)");
+        Debug.Log("Meditation → ARRIVAL (breathing stability)");
     }
 
     void EnterBalance()
     {
         currentPhase = MeditationPhase.Balance;
-        outOfBandTimer = 0f;
+
+        outOfStabilityTimer = 0f;
 
         hugeStarsShownThisCycle = false;
-        hugeStarsActive = false; // reset for this phase
+        hugeStarsActive = false;
 
-        Debug.Log("Meditation → BALANCE (compression proxy)");
+        Debug.Log("Meditation → BALANCE (breathing stability)");
     }
 
     void EnterRelease()
@@ -146,14 +180,15 @@ public class MeditationStateController : MonoBehaviour
         currentPhase = MeditationPhase.Release;
         releaseLatched = true;
 
-        Debug.Log("Meditation → RELEASE (compression proxy)");
+        Debug.Log("Meditation → RELEASE (breathing stability)");
     }
 
     public void ResetSession()
     {
         currentPhase = MeditationPhase.Arrival;
+
         calmHoldTimer = 0f;
-        outOfBandTimer = 0f;
+        outOfStabilityTimer = 0f;
 
         releaseLatched = false;
 
