@@ -136,6 +136,26 @@ namespace Signals
         private bool _torsoHzSeeded = false;
         private float _torsoHzSmoothed = 0.2f; // default ~12 BPM
 
+        // ----------------------------
+        // Arduino Pressure Sensor
+        // ----------------------------
+        [Header("Arduino Pressure")]
+        public ArduinoSerialReader arduinoPressure;
+
+        [Tooltip("Raw min/max from Arduino for normalization")]
+        public float pressureRawMin = 0f;
+        public float pressureRawMax = 1023f;
+
+        [Header("ArduinoPressure01 smoothing")]
+        public bool smoothArduinoPressure = true;
+        public float pressureDeadZone01 = 0.01f;
+        public float pressureHysteresis01 = 0.005f;
+        public float pressureEmaTau = 0.10f;
+        public float pressureMaxDeltaPerSec = 4.0f;
+
+        private bool _pressureSeeded;
+        private float _pressure01;
+
 
         [Header("Debug")]
         public bool debugChestResp = false;
@@ -159,7 +179,7 @@ namespace Signals
         float _smoothedFootDistance;
 
         [Range(0f, 1f)]
-        public float footSmoothing = 0.2f;   // 0 = no smoothing, 0.9 = heavy smoothing
+        public float footSmoothing = 0.2f;
 
         // ============================================================
         // Debug
@@ -188,6 +208,7 @@ namespace Signals
             UpdateChestRespiration(Time.deltaTime);
             UpdateFeetDistance();
             UpdateArmRaise(dt);
+            UpdateArduinoPressure(dt);
 
             if (debugLogs && Time.time >= _nextDebug)
             {
@@ -208,6 +229,9 @@ namespace Signals
                 _signals.TryGetValue(InputSignal.H10BreathWave01, out var h10w);
 
                 _signals.TryGetValue(InputSignal.ArmsRaise01, out var arms);
+
+                _signals.TryGetValue(InputSignal.ArduinoPressure01, out var pressure01);
+                _signals.TryGetValue(InputSignal.ArduinoPressureRaw, out var pressureRaw);
 
                 Debug.Log(
                     $"ArmsRaise01 = {arms:F2} | " +
@@ -598,6 +622,45 @@ namespace Signals
             _signals[InputSignal.LeftArmRaise01] = left01;
             _signals[InputSignal.RightArmRaise01] = right01;
             _signals[InputSignal.ArmsRaise01] = (left01 + right01) * 0.5f;
+        }
+
+
+        void UpdateArduinoPressure(float dt)
+        {
+            if (arduinoPressure == null)
+            {
+                _signals[InputSignal.ArduinoPressureRaw] = 0f;
+                _signals[InputSignal.ArduinoPressure01] = 0f;
+                return;
+            }
+
+            float raw = arduinoPressure.latestRaw;
+            _signals[InputSignal.ArduinoPressureRaw] = raw;
+
+            float target01 = Mathf.Clamp01(
+                Mathf.InverseLerp(pressureRawMin, pressureRawMax, raw)
+            );
+
+            if (!smoothArduinoPressure)
+            {
+                _pressureSeeded = true;
+                _pressure01 = target01;
+            }
+            else
+            {
+                _pressure01 = Filter01(
+                    ref _pressureSeeded,
+                    _pressure01,
+                    target01,
+                    dt,
+                    pressureDeadZone01,
+                    pressureHysteresis01,
+                    pressureEmaTau,
+                    pressureMaxDeltaPerSec
+                );
+            }
+
+            _signals[InputSignal.ArduinoPressure01] = _pressure01;
         }
 
         // ============================================================

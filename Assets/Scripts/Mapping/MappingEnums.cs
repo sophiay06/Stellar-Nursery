@@ -53,5 +53,8 @@ namespace MappingTool
         [DebugOnly] LeftArmRaise01,
         [DebugOnly] RightArmRaise01,
         ArmsRaise01,
+
+        ArduinoPressure01,
+        [DebugOnly] ArduinoPressureRaw
     }
 }
